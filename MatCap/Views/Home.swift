@@ -8,8 +8,10 @@
 import SwiftUI
 import SwiftData
 
+// FIXME: Auto referesh doesn't happen when a new material is added
 struct Home: View {
-    @Bindable var dataModel: DataModel
+//    @Bindable var dataModel: DataModel
+    @Environment(DataModel.self) private var dataModel
     
     @Environment(\.modelContext) private var modelContext
     @Query private var materials: [PBMaterial]
@@ -25,22 +27,8 @@ struct Home: View {
                 ScrollView(.vertical) {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 150, maximum: 450)), count: count), spacing: 8) {
                         // Reveresed the items (to have the most recent ones on top)
-                        //                    ForEach(musicLibrary.tracks.reversed()) { track in
-                        //                        Albums(library: musicLibrary, playerModel: playerModel, track: track)
-                        //                            .padding(.bottom)
-                        //                            .padding(.horizontal, 6.25)
-                        //                    }
-                        
-                        //                    Group {
-                        //                        ARPreviewContainer(baseColor: UIImage(resource: .example).pngData(), normalMap: UIImage(resource: .exampleNormal).pngData(), roughnessMap: UIImage(resource: .exampleRoughness).pngData())
-                        //                        ARPreviewContainer(baseColor: UIImage(resource: .brick).pngData(), normalMap: UIImage(resource: .brickNormal).pngData(), roughnessMap: UIImage(resource: .brickRoughness).pngData())
-                        //                        ARPreviewContainer(radius: 0.66)
-                        //                        ARPreviewContainer(radius: 0.66)
-                        //                        ARPreviewContainer(radius: 0.66)
-                        //                        ARPreviewContainer(radius: 0.66)
-                        //                        ARPreviewContainer(radius: 0.66)
-                        //                    }
                         Group {
+                            let materials = materials.reversed()
                             ForEach(materials) { material in
                                 NavigationLink(destination: MaterialInfoTab(material: material), label: {
                                     VStack(alignment: .leading) {
@@ -50,6 +38,24 @@ struct Home: View {
                                             .foregroundStyle(Color.primary)
                                     }
                                     .padding(.bottom)
+                                    // Delete a Material
+                                    .overlay(alignment: .topLeading) {
+                                        if isEditing {
+                                            Button(action: {
+                                                withAnimation(.easeOut(duration: 0.5)) {
+                                                    modelContext.delete(material)
+                                                }
+                                                try? modelContext.save()
+                                            }, label: {
+                                                let offset = min(geometry.size.width, geometry.size.height) / -50
+                                                
+                                                Image(systemName: "minus.circle.fill")
+                                                    .font(.largeTitle)
+                                                    .foregroundStyle(Color.red)
+                                                    .offset(x: offset, y: offset)
+                                            })
+                                        }
+                                    }
                                 })
                             }
                             materialAddition
@@ -63,9 +69,29 @@ struct Home: View {
                     .padding()
                 }
             }
+            .navigationTitle(Text("Physically Based Materials"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    editModeButton
+                }
+                
+                ToolbarItem(placement: .topBarTrailing) {
+                    // Duplicate as `materialAddition`
+                    Button(action: {
+                        isPresented = true
+                        isEditing = false
+                    }, label: {
+                        Image(systemName: "plus")
+                            .font(.headline)
+                            .foregroundStyle(Color.accentColor)
+                    })
+                }
+            }
         }
         .environment(dataModel)
-//            .modelContainer(appContainer)
+        // Preset container
+        .modelContainer(appContainer)
     }
     
 //    @Environment(\.editMode) private var editMode
@@ -74,6 +100,7 @@ struct Home: View {
     var materialAddition: some View {
         Button(action: {
             isPresented = true
+            isEditing = false
         }, label: {
             VStack(alignment: .leading) {
                 ZStack {
@@ -89,17 +116,35 @@ struct Home: View {
             }
         })
         .sheet(isPresented: $isPresented) {
-            CreateMaterialView(dataModel: dataModel)
+            CreateMaterialView()
         }
+    }
+    
+//    @Environment(\.editMode) private var editMode
+    @State private var isEditing = false
+    
+    var editModeButton: some View {
+        Button(action: {
+            self.isEditing.toggle()
+        }, label: {
+            let title = isEditing ? "Done" : "Edit"
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(Color.accentColor)
+        })
     }
 }
 
 #Preview {
-    Home(dataModel: DataModel())
+    Home()
+        .environment(DataModel())
         .modelContainer(appContainer)
 }
 
+
 // TODO: New File -
+
+import Photos
 
 // TODO: Introduce edit mode
 struct MaterialInfoTab: View {
@@ -125,6 +170,7 @@ struct MaterialInfoTab: View {
 //                            .multilineTextAlignment(.leading)
                         ARPreviewContainer(radius: 0.8, baseMesh: mesh, baseColor: material.baseColor, normalMap: material.normalMap, roughnessMap: material.roughnessMap)
                             .frame(width: size.width, height: size.width)
+                            .overlay(alignment: .bottomTrailing) { arButton }
                         
                         Spacer(minLength: spacerLength)
                         
@@ -155,34 +201,165 @@ struct MaterialInfoTab: View {
                         }
                         .padding(.bottom)
                     }
-                    .padding()
+                    .padding(.horizontal)
+                    .fullScreenCover(isPresented: $goAR, onDismiss: {}) {
+                        arPreview
+                    }
                 }
                 .frame(width: size.width)
                 .navigationTitle(material.name)
-                .navigationBarTitleDisplayMode(.large)
+                .navigationBarTitleDisplayMode(.inline)
                 .allowsTightening(.random())
+                .toolbar {
+                    // Exports the Textures to PhotosLibrary
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(action: {
+                            // FIXME: Doesn't save
+                            saveImagesToPhotoLibrary()
+                        }, label: {
+                            Image(systemName: "square.and.arrow.down")
+                                .font(.title3)
+                                .padding()
+                        })
+                    }
+                }
+                .toolbarTitleDisplayMode(.automatic)
             }
         }
-        .ignoresSafeArea(edges: .horizontal)
+        .ignoresSafeArea(edges: .all)
+//        .onAppear {
+//            if material.displacementMap == nil {
+//                process()
+//            }
+//        }
     }
     
     var processButton: some View {
         Button(action: {
-            Task {
-                try await dataModel.process(image: UIImage(data: material.baseColor))
-                
-                material.normalMap = dataModel.normalCGImage?.png
-                material.roughnessMap = dataModel.roughnessCGImage?.png
-                material.displacementMap = dataModel.displacementCGImage?.png
-            }
+            process()
         }, label: {
             Text("Process Base Color Texture")
                 .font(.headline)
                 .padding()
-                .background(Capsule().stroke(lineWidth: 3))
+                .background(Capsule().stroke(lineWidth: 2))
+                .shadow(radius: 18)
         })
     }
+    
+    private func process() {
+//        dataModel.free()
+        
+        Task {
+            let uiImage = UIImage(data: material.baseColor)
+            try await dataModel.process(image: uiImage, orientation: uiImage?.imageOrientation ?? .up)
+            
+            withAnimation() {
+                material.normalMap = dataModel.normalCGImage?.png
+                material.roughnessMap = dataModel.roughnessCGImage?.png
+                material.displacementMap = dataModel.displacementCGImage?.png
+                    
+            }
+            
+            provideFeedback(.success)
+        }
+    }
+    
+    @State private var goAR = false
+
+    var arButton: some View {
+        Button(action: {
+            goAR = true
+        }, label: {
+            Text("AR")
+                .font(.largeTitle)
+                .bold()
+                .foregroundStyle(Color.accentColor)
+                .shadow(color: .gray, radius: 12)
+                .padding()
+        })
+        .padding()
+    }
+    
+    var arPreview: some View {
+        NavigationStack {
+            ARPreviewContainer(radius: 0.1618, baseMesh: mesh, goAR: $goAR, baseColor: material.baseColor, normalMap: material.normalMap, roughnessMap: material.roughnessMap)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done", role: .cancel, action: {
+                            self.goAR = false
+                        })
+                        .shadow(color: .gray, radius: 12)
+                    }
+                }
+        }
+        .ignoresSafeArea()
+    }
+    
+    // MARK: Save Material to PhotosLibrary
+    private func saveImagesToPhotoLibrary() {
+        // Request authorization to access Photo Library
+        PHPhotoLibrary.requestAuthorization { status in
+            guard status == .authorized else {
+                print("Photo Library access denied")
+                return
+            }
+            
+            let name = material.name
+            // Convert Data to UIImage
+            guard let albedoImage = UIImage(data: material.baseColor) else {
+                print("Failed to convert image data")
+                return
+            }
+            saveImage(albedoImage, filename: "\(name)_Albedo")
+            provideFeedback(.success)
+            
+            if let normalMap = material.normalMap, let normalImage = UIImage(data: normalMap) {
+                saveImage(normalImage, filename: "\(name)_Normal")
+            }
+            
+            if let roughnessMap = material.roughnessMap, let roughnessImage = UIImage(data: roughnessMap) {
+                saveImage(roughnessImage, filename: "\(name)_Roughness")
+            }
+            
+            if let displacementMap = material.displacementMap, let displacementImage = UIImage(data: displacementMap) {
+                saveImage(displacementImage, filename: "\(name)_Displacement")
+            }
+        }
+    }
+
+    private func saveImage(_ image: UIImage, filename: String) {
+        guard let imageData = image.pngData() else {
+            print("Failed to convert image to PNG data")
+            return
+        }
+        
+        PHPhotoLibrary.shared().performChanges({
+            let creationRequest = PHAssetCreationRequest.forAsset()
+            let options = PHAssetResourceCreationOptions()
+            options.originalFilename = filename // Set the filename here
+            creationRequest.addResource(with: .photo, data: imageData, options: options)
+        }) { success, error in
+            DispatchQueue.main.async {
+                if success {
+                    print("Successfully saved \(filename)")
+                    // TODO: Add your alert here for successful save
+                    
+                } else if let error = error {
+                    print("Error saving image: \(error.localizedDescription)")
+                    
+                    provideFeedback(.error)
+                }
+            }
+        }
+    }
 }
+
+func provideFeedback(_ feedbackType: UINotificationFeedbackGenerator.FeedbackType = .success) {
+    let generator = UINotificationFeedbackGenerator()
+    generator.notificationOccurred(feedbackType)
+}
+
+// MARK: View Builders
 
 @ViewBuilder
 func textureView(from data: Data?, width: CGFloat) -> some View {
@@ -233,6 +410,14 @@ func loadingTextureProgressView(width: CGFloat) -> some View {
 }
 
 #Preview("MaterialInfoTab") {
+    let brick = PBMaterial(
+        name: "Brick",
+        baseColor: (UIImage(named: "Brick")?.pngData())!,
+        normalMap: UIImage(named: "Brick_Normal")?.pngData(),
+        roughnessMap: UIImage(named: "Brick_Roughness")?.pngData(),
+        displacementMap: UIImage(named: "Brick_Displacement")?.pngData()
+    )
+    
     MaterialInfoTab(material: brick)
         .environment(DataModel())
 }

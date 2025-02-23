@@ -10,7 +10,7 @@ import SwiftData
 import PhotosUI
 
 struct CreateMaterialView: View {
-    @Bindable var dataModel: DataModel
+    @Environment(DataModel.self) private var dataModel
     
     @Environment(\.modelContext) private var modelContext
     @Query private var materials: [PBMaterial]
@@ -83,31 +83,47 @@ struct CreateMaterialView: View {
                 }
             })
         }
-        .onChange(of: selectedImageData) { oldValue, newValue in
-            if let newValue = newValue {
-                Task {
-                    await processMaterial(name: name, imageData: newValue)
-                }
-            }
-        }
+//        .onChange(of: selectedImageData) { oldValue, newValue in
+//            if let newValue = newValue {
+//                Task {
+//                    await processMaterial(name: name, imageData: newValue)
+//                }
+//            }
+//        }
+        // Avoid displaying old image data
+        .onAppear { dataModel.free() }
+        .onDisappear { dataModel.free() }
     }
     
     // MARK: Helper Views
     
+    @State private var isProcessing: Bool = false
+    @State private var progress: Float = 0
+    
     var saveMaterial: some View {
         Button(action: {
             if selectedImageData != nil && !name.isEmpty, let data = selectedImageData {
-                Task {
+                // TODO: Replace with an actual progress measure
+                self.isProcessing = true
+                withAnimation(.linear(duration: 16.18)) {
+                    self.progress = 1
+                }
+                
+                Task.detached(priority: .userInitiated) {
                     // !!!: Bogus
                     let newMaterial = await processMaterial(name: self.name, imageData: data)
-                    add(material: newMaterial)
+                    await add(material: newMaterial)
                     
-                    dismiss()
+                    await dismiss()
                 }
             }
         }, label: {
-            Text("Save Material")
-                .font(.headline)
+            if isProcessing {
+                ProgressView("Processing", value: progress)
+            } else {
+                Text("Save Material")
+                    .font(.headline)
+            }
 //                .padding()
 ////                .frame(width: 150, height: 50)
 //                .background(Capsule().stroke(lineWidth: 2))
@@ -134,8 +150,11 @@ struct CreateMaterialView: View {
                 isPresented: $isCameraUp
             )
             .ignoresSafeArea()
+            // Bogus; fix camera output orientation instead of this
+            .previewInterfaceOrientation(.landscapeLeft)
 //            CamView(image: $camVM.currentFrame)
         })
+        .ignoresSafeArea()
     }
 
     @State private var selectedItem: PhotosPickerItem? = nil
@@ -149,7 +168,7 @@ struct CreateMaterialView: View {
         }
     }
 
-    // TODO: AutoCrop to Square images
+    // TODO: AutoCrop to Square images?
     var photosLibrary: some View {
         PhotosPicker(
             selection: $selectedItem,
@@ -181,40 +200,49 @@ struct CreateMaterialView: View {
     
     @State private var normalData: Data? = nil
     @State private var roughnessData: Data? = nil
+    @State private var displacementData: Data? = nil
 //    @State private var newMaterial: PBMaterial
     private func processMaterial(name: String, imageData: Data) async -> PBMaterial {
         let uiImage = UIImage(data: imageData)
-        Task {
+//        Task.detached(priority: .userInitiated) {
             // TODO: Handle
-            try? await dataModel.process(image: uiImage)
-        }
-        
-        let newMaterial = PBMaterial(name: name, baseColor: imageData)
-        
-        // TODO: Summarize
-        if let normalCGImage = dataModel.normalCGImage {
-            normalData = normalCGImage.png
-            self.normalData = normalData
-            newMaterial.normalMap = normalData
-            
-            if let roughnessCGImage = dataModel.roughnessCGImage {
-                roughnessData = roughnessCGImage.png
-                self.roughnessData = roughnessData
-                newMaterial.roughnessMap = roughnessData
+            if uiImage?.size.height != 0 {
+                try? await dataModel.process(image: uiImage, orientation: uiImage?.imageOrientation ?? .up)
             }
-        }
+            
+            let newMaterial = PBMaterial(name: name, baseColor: imageData)
+            
+            // TODO: Summarize
+            if let normalCGImage = dataModel.normalCGImage {
+                normalData = normalCGImage.png
+                newMaterial.normalMap = normalData
+                
+                if let roughnessCGImage = dataModel.roughnessCGImage {
+                    roughnessData = roughnessCGImage.png
+                    newMaterial.roughnessMap = roughnessData
+                }
+                
+                if let displacementCGImage = dataModel.displacementCGImage {
+                    displacementData = displacementCGImage.png
+                    newMaterial.displacementMap = displacementData
+                }
+            }
 
-        return newMaterial
+            provideFeedback(.success)
+            self.isProcessing = false
+            return newMaterial
+//        }
     }
     
     private func add(material: PBMaterial) {
-        withAnimation {
-            self.modelContext.insert(material)
-        }
+//        withAnimation {
+        self.modelContext.insert(material)
+        try? modelContext.save()
+//        }
     }
 }
 
-#Preview("Create Material") { CreateMaterialView(dataModel: DataModel()) }
+#Preview("Create Material") { CreateMaterialView().environment(DataModel()) }
 
 // MARK: - Extensions
 
