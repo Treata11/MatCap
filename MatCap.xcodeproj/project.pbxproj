@@ -7,11 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		61CD21522DAEF8F100A52A07 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 61CD21512DAEF8F100A52A07 /* LICENSE */; };
 		61F217442D6B6B600071C1FD /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 61F217432D6B6B600071C1FD /* README.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		617868142D54AB8C00B8DCF6 /* MatCap.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MatCap.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		61CD21512DAEF8F100A52A07 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
 		61F217432D6B6B600071C1FD /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -37,6 +39,7 @@
 		6178680B2D54AB8B00B8DCF6 = {
 			isa = PBXGroup;
 			children = (
+				61CD21512DAEF8F100A52A07 /* LICENSE */,
 				61F217432D6B6B600071C1FD /* README.md */,
 				617868162D54AB8C00B8DCF6 /* MatCap */,
 				617868152D54AB8C00B8DCF6 /* Products */,
@@ -116,6 +119,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				61F217442D6B6B600071C1FD /* README.md in Resources */,
+				61CD21522DAEF8F100A52A07 /* LICENSE in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
