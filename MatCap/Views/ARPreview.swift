@@ -6,6 +6,8 @@
 //  Created by Treata Norouzi on 1/27/24.
 //
 
+#if os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
+
 import SwiftUI
 import RealityKit
 import ARKit
@@ -16,7 +18,7 @@ import ARKit
 //    }
 //}
 
-struct ARViewContainer: UIViewRepresentable {
+private struct ARViewContainer: UIViewRepresentable {
     /*
     func makeUIView(context: Context) -> ARView {
         
@@ -126,14 +128,12 @@ struct ARViewContainer: UIViewRepresentable {
 //    ContentView()
 //}
 
-struct ARViewContainer_Preview : PreviewProvider {
-    static var previews: some View {
-        ARViewContainer().ignoresSafeArea()
-    }
+#Preview {
+    ARViewContainer().ignoresSafeArea()
 }
 
 
-// MARK: -
+// MARK: - main
 
 //
 //  ARPreview.swift
@@ -157,13 +157,48 @@ if let usdzModel = try? Entity.loadModel(named: "yourModel.usdz") {
 
 // Main
 struct ARPreviewContainer: UIViewRepresentable {
+    var radius: Float = 0.666
+    var baseMesh: BasicMesh = .sphere
+    
+    // TODO: Convert the following to @Binding
+    var baseColor: Data?
+    var normalMap: Data?
+    var roughnessMap: Data?
+    var ambientOcclusion: Data?
+    
+    @Binding var goAR: Bool
+    
+    init(radius: Float = 0.6667, baseMesh: BasicMesh = .sphere,
+         goAR: Binding<Bool> = .constant(false),
+         baseColor: Data? = nil,
+         normalMap: Data? = nil,
+         roughnessMap: Data? = nil,
+         ambientOcclusion: Data? = nil) {
+        self.radius = radius
+        self.baseMesh = baseMesh
+        self._goAR = goAR
+        self.baseColor = baseColor
+        self.normalMap = normalMap
+        self.roughnessMap = roughnessMap
+        self.ambientOcclusion = ambientOcclusion
+    }
+    
     func makeUIView(context: Context) -> ARView {
         let arView = ARView(frame: .zero)
         // Disable automatic AR configuration
-        arView.automaticallyConfigureSession = false
+        arView.automaticallyConfigureSession = goAR
+
+        if goAR {
+            #if !targetEnvironment(simulator)
+            if !ProcessInfo.processInfo.isiOSAppOnMac {
+                let config = ARWorldTrackingConfiguration()
+                arView.session.run(config)
+            }
+            #endif
+        }
+//        arView.renderOptions = []
         
-        let cube = MeshResource.generateBox(size: 0.7, cornerRadius: 0.13)
-        let spehere = MeshResource.generateSphere(radius: 0.35)
+        let mesh = baseMesh == .cube ? MeshResource.generateBox(size: radius*2, cornerRadius: radius) : MeshResource.generateSphere(radius: radius)
         
         
         // Load the texture from the asset bundle
@@ -177,16 +212,18 @@ struct ARPreviewContainer: UIViewRepresentable {
 //       material.baseColor = MaterialColorParameter.texture(textureMaterial)
 
         
-        var simpleMaterial = SimpleMaterial()
-        simpleMaterial.color = .init(tint: .white.withAlphaComponent(0.999),
-                               texture: MaterialParameters.Texture(try! .load(named: "example", in: .main)))
+//        var simpleMaterial = SimpleMaterial()
+//        simpleMaterial.color = .init(tint: .white.withAlphaComponent(0.999),
+//                               texture: MaterialParameters.Texture(try! .load(named: "example", in: .main)))
         
         
-        let pbrMaterial = Self.generateMaterialFromImages(baseColor: "example", normal: "example_Normal", roughness: "example_Roughness", ambientOcclusion: "example_Displacement")
+//        let pbrMaterial = Self.generateMaterialFromImages(baseColor: "example", normal: "example_Normal", roughness: "example_Roughness", ambientOcclusion: "example_Displacement")
+        let pbrMaterial = setPBRMaterial()
         
-        let model = ModelEntity(mesh: spehere, materials: [pbrMaterial])
+        let model = ModelEntity(mesh: mesh, materials: [pbrMaterial])
 
         let anchorEntity = AnchorEntity()
+        anchorEntity.name = "PreviewAnchor"
         anchorEntity.addChild(model)
         arView.scene.addAnchor(anchorEntity)
         
@@ -199,6 +236,36 @@ struct ARPreviewContainer: UIViewRepresentable {
         // Update the view here if needed
     }
     
+    // iOS 18
+    func setPBRMaterial(uiColor: UIColor? = nil, enableClearCoat: Bool = false) -> PhysicallyBasedMaterial {
+        // TODO: Add influence
+        var material = PhysicallyBasedMaterial()
+        
+        if let color = uiColor {
+            material.baseColor = PhysicallyBasedMaterial.BaseColor(tint: color)
+        } else if let baseColor = self.baseColor, let image: CGImage = UIImage(data: baseColor, scale: 1)!.cgImage {
+            let texture: TextureResource = try! .init(image: image, options: .init(semantic: .color))
+            let baseColor = MaterialParameters.Texture(texture)
+            material.baseColor = PhysicallyBasedMaterial.BaseColor(texture: baseColor)
+        }
+        
+        if let normalMap = self.normalMap, let image: CGImage = UIImage(data: normalMap, scale: 1)!.cgImage {
+            let nTexture: TextureResource = try! .init(image: image, options: .init(semantic: .normal))
+            let normal = MaterialParameters.Texture(nTexture)
+            material.normal = PhysicallyBasedMaterial.Normal(texture: normal)
+        }
+        if let roughnessMap = self.roughnessMap, let image: CGImage = UIImage(data: roughnessMap, scale: 1)!.cgImage {
+            let rTexture: TextureResource = try! .init(image: image, options: .init(semantic: .scalar))
+            let roughness = MaterialParameters.Texture(rTexture)
+            material.roughness = PhysicallyBasedMaterial.Roughness(texture: roughness)
+        }
+        // TODO: Use displacement as `ambientOcclusion` map?
+        
+        material.blending = .opaque
+        return material
+    }
+    
+    /// Images must be from Bundle
     static func generateMaterialFromImages(
         uiColor: UIColor? = nil,
         baseColor: String? = nil,
@@ -277,9 +344,15 @@ struct ARPreviewContainer: UIViewRepresentable {
     }
 }
 
+enum BasicMesh {
+    case cube
+    case sphere
+    case plane
+}
+
 struct ARPreview: View {
     var body: some View {
-        ARPreviewContainer()
+        ARPreviewContainer(baseColor: UIImage(resource: .brick).pngData(), normalMap: UIImage(resource: .brickNormal).pngData(), roughnessMap: UIImage(resource: .brickRoughness).pngData())
             .ignoresSafeArea(edges: .all)
             .background {
                 Color.white
@@ -290,3 +363,5 @@ struct ARPreview: View {
 #Preview("ARPreview") {
     ARPreview()
 }
+
+#endif
